@@ -14,6 +14,7 @@ import glob
 
 from gensim.parsing.preprocessing import strip_numeric
 from gensim.parsing.preprocessing import strip_non_alphanum
+from preprocessing import preprocessing_init, tag_documents
 
 
 #nltk.download('punkt')
@@ -67,11 +68,10 @@ def plot_kmeans(X, n, clf):
     ax.scatter(clf.cluster_centers_[:,0], clf.cluster_centers_[:,1], marker='x', s=50, c='#000000')
 
 def kmeans_cluster(X, n):
+    print(X)
     clf = KMeans(n_clusters=n, max_iter=100, init="k-means++", n_init=10, random_state=42)
     # X_labels = clf.fit_predict(X)
-    clf.fit(X)
-    print("Words shape:", X.shape)
-    print("Number of labels:", clf.labels_.shape)
+    y = clf.fit(X)
 
     return clf
 
@@ -87,44 +87,67 @@ def plot_elbow(X):
     plt.xlabel("Number of clusters")
     plt.ylabel("WCSS")
 
-def doc2vec(sentences):
-    documents = [TaggedDocument(doc, [i]) for i, doc in enumerate(sentences)]
-    model = Doc2Vec(documents, vector_size=200, window=2, min_count=1, workers=7)
+def doc2vec(sentences, labels):
+    tagged_sent = tag_documents(sentences, labels)
+    model = Doc2Vec(tagged_sent,min_count=1, vector_size=250, sample=1e-4, negative=6 ,workers=4,epochs=2)
 
-    return model.docvecs.vectors_docs
+    docvecs = []
+    tags    = []
+
+    for i in range(len(labels)):
+        docvecs.append(model.docvecs["id" + str(i)])
+        tags.append(labels[i])
+    return docvecs, tags
 
 def bag_of_words(sentences):
-    flattened_sentences = [' '.join(i) for i in sentences]
-    tfidf = TfidfVectorizer()
-    bag_of_words = tfidf.fit_transform(flattened_sentences)
+    tfidf = TfidfVectorizer(max_features=5000)
+    bag_of_words = tfidf.fit_transform(sentences)
 
     return bag_of_words.toarray()
 
-def preprocessing():
-    with open("datasets/unsup_dataset.csv") as data:
-        df = pd.read_csv(data, names=["text"])["text"]
+def create_new_dataset():
+    all_files_neg = glob.iglob("datasets/test/neg/*")
+    all_files_pos = glob.iglob("datasets/test/pos/*")
 
-    df = df.str.lower()
-    df = df.str.replace(r're:\s*', '')
-    df = df.str.replace(r'sv:\s*', '')
-    df = df.str.replace(r'fwd:\s*', '')
-    df = df.str.replace(r"\[.*\]",'')
-    df = df.apply(strip_numeric)
-    df = df.apply(strip_non_alphanum)
-    df = df.str.replace(r'\s+', ' ')
-    df = df.str.strip()
-    df = df.drop_duplicates()
+    df_neg = pd.concat((pd.read_table(f, names = ["text"]) for f in all_files_neg))
+    df_neg["label"] = 0
 
-    return list(df)
+    df_pos = pd.concat((pd.read_table(f, names = ["text"]) for f in all_files_pos))
+    df_pos["label"] = 1
+
+    df = pd.concat([df_pos, df_neg])
+
+    df.to_csv("datasets/unsup_dataset.csv")
+    
+    return df
+
+def read_dataset():
+    #df = create_new_dataset()
+
+    df = pd.read_csv("datasets/unsup_dataset.csv", names = ["text", "label"])
+
+    df = df.dropna()
+
+    df = df[1:].sample(frac=1).reset_index(drop=True)
+
+    return list(df["text"]), list(df["label"])
+
+def preprocessing(df):
+
+    df = df.dropna()
+
+    df = df[1:].sample(frac=1).reset_index(drop=True)
+
+    return list(df["text"]), list(df["label"])
 
 
 def make_model():
-    
-    sentences = preprocessing()
-    model = doc2vec(sentences)
+    dataset, labels = read_dataset()
+    sentences = preprocessing_init(dataset)
+    model, tags = doc2vec(sentences, labels)
     #model = bag_of_words(sentences)
 
-    return (sentences, model)
+    return (sentences, model, labels, tags)
 
 def write_files(clf, docs, n):
     label_dict = {}
@@ -146,15 +169,32 @@ def write_files(clf, docs, n):
             docs = label_dict[i]
             out_file.writelines(docs)
 
+def find_accuracy(labels, tags):
+    correct = 0
+    totals = len(labels)
+
+    print(labels.shape)
+    print(len(tags))
+
+
+    for idx, label in enumerate(labels):
+        if int(label) == int(labels[int(tags[idx])]):
+            correct += 1
+    
+    total_correct = (float(correct)/float(totals)) * 100
+
+    with open("results.txt", "w") as res:
+        res.write(f"Percentage of accurate guesses is {total_correct}")
+
 def main():
-    documents, model = make_model()
+    documents, model, labels, tags = make_model()
 
     X = model
     n = 2
     clf = kmeans_cluster(X, n)
-    plot_kmeans(X, n, clf)
-
-    write_files(clf, documents, n)
+    #plot_kmeans(X, n, clf)
+    #write_files(clf, documents, n)
+    find_accuracy(clf.labels_, tags)
     
 
 

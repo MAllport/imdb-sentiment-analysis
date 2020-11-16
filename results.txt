@@ -1,1 +1,1 @@
-Percentage of accurate guesses is 74.25897035881435
+Percentage of accurate guesses is 39.007999999999996 %

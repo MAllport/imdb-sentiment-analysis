@@ -9,15 +9,31 @@ from bs4 import BeautifulSoup
 
 tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
 
-def tag_documents(train, labels):
-    tagged = []
-    for idx, doc in enumerate(train):
-        for sentence in doc:
-            if sentence not in [None, ""]:
-                tokens = nltk.word_tokenize(sentence)
-                tagged.append(TaggedDocument(words = tokens, tags=["id" + str(idx), str(labels[idx])]))
-    
-    return tagged
+def tag_documents(train, test, labels):
+    tagged_train = []
+    tagged_test  = []
+
+    for idx, (train_doc, test_doc) in enumerate(zip(train, test)):
+        if train_doc != []:
+            token_list = []
+            for sentence in train_doc:
+                if sentence not in [None, ""]:
+                    tokens = nltk.word_tokenize(sentence)
+                    for token in tokens:
+                        if token not in [None, ""]:
+                            token_list.append(token)
+            tagged_train.append(TaggedDocument(words = token_list, tags=["id" + str(idx)]))
+
+        if test_doc != []:
+            token_list = []
+            for sentence in test_doc:
+                if sentence not in [None, ""]:
+                    tokens = nltk.word_tokenize(sentence)
+                    for token in tokens:
+                        if token not in [None, ""]:
+                            token_list.append(token)
+            tagged_test.append(token_list)
+    return tagged_train, tagged_test
 
 
 

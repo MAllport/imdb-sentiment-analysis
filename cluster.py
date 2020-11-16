@@ -68,7 +68,6 @@ def plot_kmeans(X, n, clf):
     ax.scatter(clf.cluster_centers_[:,0], clf.cluster_centers_[:,1], marker='x', s=50, c='#000000')
 
 def kmeans_cluster(X, n):
-    print(X)
     clf = KMeans(n_clusters=n, max_iter=100, init="k-means++", n_init=10, random_state=42)
     # X_labels = clf.fit_predict(X)
     y = clf.fit(X)
@@ -87,17 +86,22 @@ def plot_elbow(X):
     plt.xlabel("Number of clusters")
     plt.ylabel("WCSS")
 
-def doc2vec(sentences, labels):
-    tagged_sent = tag_documents(sentences, labels)
-    model = Doc2Vec(tagged_sent,min_count=1, vector_size=250, sample=1e-4, negative=6 ,workers=4,epochs=2)
-
+def doc2vec(train, test, labels):
+    print("Starting to tag documents..")
+    tagged_train, tagged_test = tag_documents(train, test, labels)
+    print(f"Done tagging documents. Length of tagged training documents is {len(tagged_train)}, length of tagged test documents is {len(tagged_test)}\n")
+    print("Start training doc2vec model..")
+    model = Doc2Vec(tagged_train, min_count=1, vector_size=250, sample=1e-4, negative=6 ,workers=7, epochs = 10)
+    print("Done with doc2vec model \n")
+    
     docvecs = []
-    tags    = []
-
-    for i in range(len(labels)):
+    test_docvecs = []
+    print("Start inferring from test-set..")
+    for i in range(len(train)):
         docvecs.append(model.docvecs["id" + str(i)])
-        tags.append(labels[i])
-    return docvecs, tags
+        test_docvecs.append(model.infer_vector(tagged_test[i]))
+    print("Done inferring \n")
+    return docvecs, test_docvecs
 
 def bag_of_words(sentences):
     tfidf = TfidfVectorizer(max_features=5000)
@@ -117,15 +121,13 @@ def create_new_dataset():
 
     df = pd.concat([df_pos, df_neg])
 
-    df.to_csv("datasets/unsup_dataset.csv")
+    df.to_csv("datasets/test_dataset.csv")
     
     return df
 
-def read_dataset():
-    #df = create_new_dataset()
+def read_dataset(dataset_string):
 
-    df = pd.read_csv("datasets/unsup_dataset.csv", names = ["text", "label"])
-
+    df = pd.read_csv(f"datasets/{dataset_string}_dataset.csv", names = ["text", "label"])
     df = df.dropna()
 
     df = df[1:].sample(frac=1).reset_index(drop=True)
@@ -142,12 +144,18 @@ def preprocessing(df):
 
 
 def make_model():
-    dataset, labels = read_dataset()
-    sentences = preprocessing_init(dataset)
-    model, tags = doc2vec(sentences, labels)
+    print("Reading dataset...")
+    train, train_label = read_dataset("train")
+    test, test_label   = read_dataset("test")
+    print("Done reading dataset\n")
+    print("Starting pre-processing..")
+    train = preprocessing_init(train)
+    test  = preprocessing_init(test)
+    print(f"Done with pre-processing. Length of train is {len(train)}, lenggth of test is {len(test)}\n")
+    docvecs, test_docvecs = doc2vec(train, test, train_label)
     #model = bag_of_words(sentences)
 
-    return (sentences, model, labels, tags)
+    return (docvecs, test_docvecs, train_label, test_label)
 
 def write_files(clf, docs, n):
     label_dict = {}
@@ -169,33 +177,35 @@ def write_files(clf, docs, n):
             docs = label_dict[i]
             out_file.writelines(docs)
 
-def find_accuracy(labels, tags):
+def find_accuracy(clf_labels, test_label):
     correct = 0
-    totals = len(labels)
+    totals = len(clf_labels)
 
-    print(labels.shape)
-    print(len(tags))
+    print(clf_labels.shape)
+    print(len(test_label))
 
 
-    for idx, label in enumerate(labels):
-        if int(label) == int(labels[int(tags[idx])]):
+    for idx, label in enumerate(clf_labels):
+        if int(label) == int(test_label[idx]):
             correct += 1
-    
+    print(correct)
     total_correct = (float(correct)/float(totals)) * 100
-
+    print(f"Accuracy is {total_correct} %")
     with open("results.txt", "w") as res:
-        res.write(f"Percentage of accurate guesses is {total_correct}")
+        res.write(f"Percentage of accurate guesses is {total_correct} %")
 
 def main():
-    documents, model, labels, tags = make_model()
-
-    X = model
+    docvecs, test_docvecs, train_label, test_label = make_model()
+    print("Starting clustering..")
+    X = test_docvecs
     n = 2
     clf = kmeans_cluster(X, n)
-    #plot_kmeans(X, n, clf)
+    plot_kmeans(X, n, clf)
+    print("Done with clustering \n")
     #write_files(clf, documents, n)
-    find_accuracy(clf.labels_, tags)
-    
+    print("Finding the accuracy..")
+    find_accuracy(clf.labels_, test_label)
+    print("Accuracy is calculated\n Done")
 
 
     plt.show()
